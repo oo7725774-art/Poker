@@ -1129,7 +1129,7 @@ body.bonusround .stage{box-shadow:inset 0 0 60px rgba(255,95,224,.35),inset 0 0 
           <div class="potchips" id="potChips" aria-hidden="true"></div>
           <div class="cards" id="board"></div>
           <div class="pot" id="pot">POT 0</div>
-          <div class="jpm" id="jpm" aria-label="ジャックポット"></div>
+          <div class="jpm" id="jpm" aria-label="ボーナス" hidden></div>
         </div>
       </div>
       <div class="plates" id="plates" aria-live="off"></div>
@@ -1802,11 +1802,12 @@ function voidHand(){
 
 /* ================= エンジン（親／ソロで動く） ================= */
 const JP_BASE = 5000, JP_ADD = 50, BONUS_RATE = .16;
+const JP_ON = false;   // ジャックポットは廃止（2026-11-08、ユーザー希望）。戻すときは true に
 const BONUS_KINDS = [
   {k:"pot2",     t:"POT ×2",        jp:"勝った人のポットが2倍"},
   {k:"blind3",   t:"BLIND ×3",      jp:"ブラインドが3倍の大勝負"},
   {k:"jpchance", t:"JACKPOT CHANCE", jp:"フルハウス以上でジャックポット"},
-];
+].filter(x => JP_ON || x.k!=="jpchance");
 const BONUS = Object.fromEntries(BONUS_KINDS.map(x=>[x.k,x]));
 function blankTable(code, hostId){
   return {v:1, code, hostId, hostPub:null, phase:"wait", handNo:0, dealer:-1, sb:SB, bb:BB, seats:[], board:[], curBet:0, minRaise:BB, toAct:-1, log:[], result:null, enc:{}, deadline:0, auto:false, rev:0, updated:Date.now()};
@@ -1857,8 +1858,7 @@ async function startHand(){
   st.over = null;
   st.handNo++;
   // ジャックポット：毎局、店が積み増す（プレイヤーのチップは減らない）
-  if (!(st.jp>0)) st.jp = JP_BASE;
-  st.jp += JP_ADD * players.length;
+  if (JP_ON){ if (!(st.jp>0)) st.jp = JP_BASE; st.jp += JP_ADD * players.length; } else st.jp = 0;
   // ボーナスラウンド：ときどき特別な局になる
   st.bonus = null;
   if (st.handNo >= 3 && st.handNo - (st.bonusAt||-9) >= 3 && Math.random() < BONUS_RATE){ st.bonus = BONUS_KINDS[Math.floor(Math.random()*BONUS_KINDS.length)].k; st.bonusAt = st.handNo; }
@@ -2002,7 +2002,7 @@ function showdown(){
   let jp = null;
   const top = lv.slice().sort((a,b)=>cmpScore(b.best.score,a.best.score))[0];
   const need = st.bonus==="jpchance" ? 6 : 7;
-  if (top && top.best.score[0] >= need && st.jp > 0){
+  if (JP_ON && top && top.best.score[0] >= need && st.jp > 0){
     const tied = lv.filter(x=>cmpScore(x.best.score, top.best.score)===0);
     const share = Math.floor(st.jp/tied.length/10)*10; let rem = st.jp - share*tied.length;
     tied.forEach((x,k)=>{ x.chips += share + (k===0?rem:0); });
@@ -2315,6 +2315,11 @@ function render(){
   // ジャックポットとボーナス
   const jpv = st.jp>0 ? st.jp : JP_BASE, bk = st.bonus && BONUS[st.bonus] && (inHandPhase() || st.phase==="showdown") ? BONUS[st.bonus] : null;
   const jEl = $("#jpm");
+  if (!JP_ON){
+    jEl.hidden = !bk;
+    if (bk && jEl.dataset.bk !== bk.k){ jEl.dataset.bk = bk.k; jEl.innerHTML = `<em class="bb">${esc(bk.t)}</em>`; }
+    if (!bk) jEl.dataset.bk = "";
+  } else
   if (jEl.dataset.v !== String(jpv)){ const from = +jEl.dataset.v || jpv; jEl.dataset.v = String(jpv);
     jEl.innerHTML = `<span>JACKPOT</span><b>${fmt(from)}</b>${bk?`<em class="bb">${esc(bk.t)}</em>`:""}`; const bEl = jEl.querySelector("b");
     if (from !== jpv){ const t0 = performance.now(); const stp = now => { const k = Math.min(1,(now-t0)/900); bEl.textContent = fmt(Math.round(from + (jpv-from)*(1-Math.pow(1-k,3)))); if (k<1) requestAnimationFrame(stp); }; requestAnimationFrame(stp); jEl.classList.remove("up"); void jEl.offsetWidth; jEl.classList.add("up"); } }
