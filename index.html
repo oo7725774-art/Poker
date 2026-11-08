@@ -1082,6 +1082,7 @@ body.bonusround .stage{box-shadow:inset 0 0 60px rgba(255,95,224,.35),inset 0 0 
       <div id="netnote" class="note">オンライン接続を確認中…</div>
       <button class="btn ghost" id="soloBtn">CPUと練習する</button>
       <div class="house">初期チップ 10,000　·　ブラインド 50 / 100　·　最大 8 人</div>
+      <div class="house" id="verTag" style="opacity:.55;font-size:11px">v34</div>
     </div>
   </section>
   <div class="modal" id="histModal" hidden role="dialog" aria-modal="true" aria-labelledby="histTitle">
@@ -1445,128 +1446,132 @@ $("#muteBtn").textContent = "音："+(Snd.on?"ON":"OFF");
 $("#leaveBtn").onclick = () => leaveTable();
 
 
-/* ================= アプリ版のオンライン（P2P: PeerJS） =================
-   claude.ai の外では db/room が無いので、親の端末を「卓のサーバー」にして
-   WebRTC で直接つなぐ。db.doc / collection と同じ形の小さな置き換え。 */
-const P2P_LIB = "lib/peerjs.min.js";
-const P2P_PFX = "gkpoker1-";
+/* ================= アプリ版のオンライン（中継: MQTT over WebSocket） =================
+   claude.ai の外では db/room が無いので、無料の公開MQTTブローカーを中継に使う。
+   卓は retained メッセージ（最後の状態がサーバーに残る）として置く。
+   手札は今までどおり各プレイヤーの鍵で暗号化されているので、中継からは見えない。 */
+const MQ_LIB = "lib/mqtt.min.js";
+const MQ_URLS = ["wss://broker.emqx.io:8084/mqtt", "wss://broker.hivemq.com:8884/mqtt"];
+const MQ_PFX = "gkpoker1/";
+const MQ_FRESH = 120000;
 function loadScript(src){ return new Promise((ok,ng)=>{ const s=document.createElement("script"); s.src=src; s.onload=ok; s.onerror=ng; document.head.appendChild(s); }); }
-function makeP2P(){
-  const cfg = ls.get("gh-p2p-cfg") || {};
-  const T = {};
+function makeMQ(){
+  const urls = ls.get("gh-mq-urls") || MQ_URLS;
+  const H = new Map();           // filter -> Set(fn)
+  const LAST = new Map();        // topic -> 最後に届いた中身
+  let cliP = null;
   const cp = o => o==null ? o : JSON.parse(JSON.stringify(o));
-  const snapDoc = d => ({ exists: !!d, data: () => cp(d) });
-  const snapCol = o => ({ docs: Object.keys(o).map(id => ({ id, data: () => cp(o[id]) })) });
-  const ent = c => T[c] || (T[c] = { code:c, table:null, players:{}, tSubs:new Set(), pSubs:new Set(), conns:new Set(), lastP:{}, role:null });
-  const fireT = e => e.tSubs.forEach(f=>{ try{ f(snapDoc(e.table)); }catch(x){} });
-  const fireP = e => e.pSubs.forEach(f=>{ try{ f(snapCol(e.players)); }catch(x){} });
-  const wait = ms => new Promise(r=>setTimeout(r,ms));
-  function newPeer(id){
-    return new Promise((ok, ng) => {
-      const p = id ? new Peer(id, cfg) : new Peer(cfg);
-      let done=false;
-      const to = setTimeout(()=>{ if(!done){ done=true; try{p.destroy()}catch(x){} ng({type:"network"}); } }, 12000);
-      p.on("open", () => { if(done) return; done=true; clearTimeout(to); ok(p); });
-      p.on("error", err => { if (!done){ done=true; clearTimeout(to); try{p.destroy()}catch(x){} ng(err||{}); } else if (p._onErr) p._onErr(err||{}); });
-      p.on("disconnected", () => { if (!p.destroyed) setTimeout(()=>{ try{ if (!p.destroyed && p.disconnected) p.reconnect(); }catch(x){} }, 1500); });
-    });
+  const match = (f, t) => { const a=f.split("/"), b=t.split("/"); if (a.length!==b.length) return false; return a.every((x,i)=>x==="+"||x===b[i]); };
+  // 2つのブローカーに同時につなぎ、両方に送って両方から受け取る（片方が止められていても相手と会える）
+  const CL = [];                 // つながっているクライアント
+  let readyP = null, readyOk = null;
+  function onMsg(topic, buf){
+    let d=null; try{ d = buf && buf.length ? JSON.parse(new TextDecoder().decode(buf)) : null; }catch(e){ return; }
+    const prev = LAST.get(topic);
+    if (prev && d && prev.updated && d.updated && d.updated < prev.updated && (d.rev||0) <= (prev.rev||0)) return;   // 別のブローカーから届いた古い版は捨てる
+    LAST.set(topic, d);
+    H.forEach((fs, f) => { if (match(f, topic)) fs.forEach(fn => { try{ fn(topic, d); }catch(e){} }); });
   }
-  function dropGuest(e){
-    try{ e.conn && e.conn.close(); }catch(x){} try{ e.gpeer && e.gpeer.destroy(); }catch(x){}
-    e.conn=null; e.gpeer=null; e.guestP=null;
-  }
-  function host(e, once){
-    if (e.hostP) return e.hostP;
-    e.role="host"; dropGuest(e);
-    e.hostP = (async () => {
-      let last;
-      for (let i=0;i<8;i++){
-        try{ e.peer = await newPeer(P2P_PFX+e.code); break; }
-        catch(err){ last=err; if (err && err.type==="unavailable-id" && !once){ await wait(2500); continue; } break; }
-      }
-      if (!e.peer){ e.hostP=null; e.role=null; throw last||{type:"network"}; }
-      e.peer.on("connection", c => {
-        c.on("open", () => { e.conns.add(c); if (e.table) try{ c.send({t:"table", d:e.table}); }catch(x){} });
-        c.on("data", m => { if (m && m.t==="pset" && typeof m.id==="string" && m.id.length<80 && m.d && typeof m.d==="object"){ e.players[m.id]=m.d; fireP(e); } });
-        c.on("close", () => e.conns.delete(c));
-        c.on("error", () => e.conns.delete(c));
+  function start(){
+    if (readyP) return readyP;
+    readyP = new Promise(ok => { readyOk = ok; });
+    urls.forEach(u => {
+      let c;
+      try{ c = mqtt.connect(u, { clientId:"gk_"+Math.random().toString(16).slice(2,14), clean:true, connectTimeout:20000, reconnectPeriod:4000, keepalive:30 }); }catch(e){ return; }
+      c.on("error", () => {});
+      c.on("message", onMsg);
+      c.on("connect", () => {
+        if (!CL.includes(c)) CL.push(c);
+        H.forEach((fs,f)=>{ if (fs.size) c.subscribe(f, {qos:1}); });   // つながる（つなぎ直す）たびに購読し直す
+        readyOk(c);
       });
-      return e.peer;
-    })();
-    return e.hostP;
-  }
-  function guest(e){
-    if (e.guestP) return e.guestP;
-    if (!e.role) e.role="guest";
-    e.left=false;
-    e.guestP = new Promise(async (ok, ng) => {
-      try{ if (!e.gpeer) e.gpeer = await newPeer(null); }catch(err){ e.guestP=null; return ng(err); }
-      let settled=false, retry=null;
-      const fail = err => { if (settled) return; settled=true; e.guestP=null; ng(err); };
-      const again = ms => { if (retry || e.left || e.role==="host" || !e.tSubs.size) return; retry=setTimeout(()=>{ retry=null; if (!e.left && e.gpeer && !e.gpeer.destroyed) tryConn(); }, ms); };
-      e.gpeer._onErr = err => { if (err.type==="peer-unavailable"){ if (!settled) fail(err); else again(3000); } };
-      const tryConn = () => {
-        const c = e.gpeer.connect(P2P_PFX+e.code, {reliable:true, serialization:"json"});
-        const to = setTimeout(()=>{ if (!settled){ try{c.close()}catch(x){} fail({type:"timeout"}); } else if (!c.open){ try{c.close()}catch(x){} again(2000); } }, 20000);
-        c.on("open", () => { e.conn=c; Object.keys(e.lastP).forEach(id=>{ try{ c.send({t:"pset", id, d:e.lastP[id]}); }catch(x){} }); });
-        c.on("data", m => { if (m && m.t==="table" && m.d){ clearTimeout(to); e.table=m.d; if (!settled){ settled=true; ok(); } fireT(e); } });
-        c.on("close", () => { if (e.conn===c) e.conn=null; if (settled) again(2000); });
-        c.on("error", () => {});
-      };
-      tryConn();
+      c.on("close", () => { const k = CL.indexOf(c); if (k>=0) CL.splice(k,1); });
     });
-    return e.guestP;
+    return readyP;
   }
+  function client(timeout){
+    start();
+    if (CL.length) return Promise.resolve(CL[0]);
+    return Promise.race([readyP, new Promise((_,ng)=>setTimeout(()=>ng({type:"network"}), timeout||25000))]);
+  }
+  async function sub(f, fn){
+    await client();
+    if (!H.has(f)){ H.set(f, new Set()); H.get(f).add(fn); CL.forEach(c => c.subscribe(f, {qos:1})); }   // 購読すると retained の最新状態が届く
+    else { H.get(f).add(fn); LAST.forEach((d,t) => { if (match(f,t)) setTimeout(()=>{ try{ fn(t,d); }catch(e){} },0); }); }
+    return () => { const fs=H.get(f); if (fs){ fs.delete(fn); if (!fs.size){ H.delete(f); [...LAST.keys()].forEach(t=>{ if (match(f,t)) LAST.delete(t); }); CL.forEach(c=>{ try{ c.unsubscribe(f); }catch(e){} }); } } };
+  }
+  async function pub(t, d, retain=true){
+    await client();
+    const body = d==null ? "" : JSON.stringify(d);
+    await Promise.all(CL.map(c => new Promise(ok => { try{ c.publish(t, body, {qos:1, retain}, () => ok()); }catch(e){ ok(); } setTimeout(ok, 8000); })));
+  }
+  const tTopic = code => MQ_PFX+"t/"+code;
+  const pTopic = (code,id) => MQ_PFX+"t/"+code+"/p/"+(id||"+");
+  const snapDoc = d => ({ exists: !!d, data: () => cp(d) });
+  const hosting = {};             // code -> unsub（親のときの重複チェック）
   return {
-    p2p: true,
-    async claim(code){ const e=ent(code); await host(e, true); },
+    relay: true,
+    ready: (ms) => client(ms),
     doc(path){
-      const m = /^tables\/([A-Z0-9]{4})$/.exec(path); const e = ent(m ? m[1] : "????");
+      const code = (/^tables\/([A-Z0-9]{4})$/.exec(path)||[])[1] || "????";
       return {
         async get(){
-          if (e.role==="host" && e.table) return snapDoc(e.table);
-          if (e.table && e.conn && e.conn.open) return snapDoc(e.table);
-          try{ await guest(e); return snapDoc(e.table); }
-          catch(err){
-            if (err && (err.type==="peer-unavailable" || err.type==="timeout")){
-              dropGuest(e); e.role=null;
-              const saved = ls.get("gh-p2p-"+e.code);
-              if (saved && saved.hostId===me.id && !saved.closed && Date.now()-(saved.updated||0) < 6*3600e3) return snapDoc(saved);
-              return snapDoc(null);
-            }
-            throw err;
-          }
+          let got, un;
+          await new Promise(async (ok) => {
+            let t = setTimeout(ok, 2500), early = false;
+            un = await sub(tTopic(code), (tp, d) => {
+              if (d && (!got || (d.updated||0) > (got.updated||0))) got = d; else if (!got) got = d;
+              if (!early){ early = true; clearTimeout(t); t = setTimeout(ok, CL.length > 1 ? 700 : 0); }
+            });
+          });
+          if (un) un();
+          const fresh = got && !got.closed && Date.now()-(got.updated||0) < MQ_FRESH;
+          return snapDoc(fresh ? got : null);
         },
         async set(d){
-          e.table = cp(d);
-          if (!e.peer) await host(e);
-          if (!e.code.startsWith("QM")) ls.set("gh-p2p-"+e.code, d.closed ? null : e.table);
-          e.conns.forEach(c=>{ try{ c.send({t:"table", d:e.table}); }catch(x){} });
-          if (d.closed){ const pe=e.peer; setTimeout(()=>{ try{ pe.destroy(); }catch(x){} if (T[e.code]===e) delete T[e.code]; }, 2000); }
+          await pub(tTopic(code), d);
+          if (d.closed){ setTimeout(()=>{ pub(tTopic(code), null).catch(()=>{}); }, 4000); if (hosting[code]){ hosting[code](); delete hosting[code]; } return; }
+          if (!hosting[code]){
+            hosting[code] = () => {};
+            sub(tTopic(code), (tp, o) => {
+              if (!o || o.closed || o.hostId===d.hostId) return;
+              if (window.onHostConflict) window.onHostConflict(code, o);
+            }).then(u => { hosting[code] = u; });
+          }
         },
         onSnapshot(cb){
-          e.tSubs.add(cb);
-          if (e.table) setTimeout(()=>cb(snapDoc(e.table)),0);
-          if (e.role!=="host") guest(e).catch(()=>{});
-          return () => { e.tSubs.delete(cb); if (!e.tSubs.size && e.role!=="host"){ e.left=true; setTimeout(()=>{ if (e.left){ dropGuest(e); if (T[e.code]===e) delete T[e.code]; } }, 1500); } };
+          let un=null, dead=false;
+          sub(tTopic(code), (tp, d) => cb(snapDoc(d && !d.closed ? d : (d ? d : null)))).then(u => { if (dead) u(); else un=u; }).catch(()=>{});
+          return () => { dead=true; if (un) un(); };
         }
       };
     },
     collection(path){
-      const m = /^tables\/([A-Z0-9]{4})\/players$/.exec(path); const e = ent(m ? m[1] : "????");
+      const code = (/^tables\/([A-Z0-9]{4})\/players$/.exec(path)||[])[1] || "????";
+      const P = {};
+      const snapCol = () => ({ docs: Object.keys(P).map(id => ({ id, data: () => cp(P[id]) })) });
       return {
-        async get(){ return snapCol(e.players); },
-        onSnapshot(cb){ e.pSubs.add(cb); setTimeout(()=>cb(snapCol(e.players)),0); return () => e.pSubs.delete(cb); },
-        doc(id){ return { async set(d){
-          e.lastP[id]=cp(d);
-          if (e.role==="host"){ e.players[id]=cp(d); fireP(e); return; }
-          if (!(e.conn && e.conn.open)){ try{ await guest(e); }catch(x){} }
-          if (e.conn && e.conn.open) e.conn.send({t:"pset", id, d});
-        } }; }
+        async get(){ return snapCol(); },
+        onSnapshot(cb){
+          let un=null, dead=false;
+          sub(pTopic(code), (tp, d) => { const id = tp.split("/").pop(); if (d) P[id]=d; else delete P[id]; cb(snapCol()); }).then(u => { if (dead) u(); else un=u; }).catch(()=>{});
+          return () => { dead=true; if (un) un(); };
+        },
+        doc(id){ return { async set(d){ await pub(pTopic(code, id), d); } }; }
       };
     }
   };
 }
+/* 同時に同じ公開卓の親になったときは、先に作った方（同時なら id の小さい方）が残る */
+window.onHostConflict = (code, other) => {
+  if (mode!=="host" || !st || st.code!==code) return;
+  const mine = [st.created||0, st.hostId], theirs = [other.created||0, other.hostId];
+  const iWin = mine[0] < theirs[0] || (mine[0]===theirs[0] && mine[1] < theirs[1]);
+  if (iWin){ pushState(); return; }
+  clearTimers(); unsubs.forEach(u=>{try{u()}catch(e){}}); unsubs=[];
+  mode=null; st=null; H=null;
+  later(() => joinRoom(code), 2000);
+};
 
 /* ================= オンライン対戦（ランダムマッチ） =================
    公開卓 QM01〜QM12 を順に見て、空席のある卓に座る。無ければ自分が親になる。
@@ -1577,33 +1582,36 @@ async function quickMatch(){
   if (mmBusy) return; mmBusy=true;
   const btn=$("#quickBtn"); const lbl=btn.querySelector("small"); const old=lbl.textContent; lbl.textContent="相手を探しています…"; btn.disabled=true;
   try{
-    for (const code of MM_CODES){
-      if (db.p2p){
-        let claimed=false;
-        try{ await db.claim(code); claimed=true; }
-        catch(e){ if (!e || e.type!=="unavailable-id"){ lobErr("接続に失敗した。少し待ってもう一度。"); return; } }
-        if (claimed){ await createRoom(code); return; }
-      }
-      let snap; try{ snap = await db.doc("tables/"+code).get(); }catch(e){ lobErr("接続に失敗した。少し待ってもう一度。"); return; }
-      const d = snap.exists ? snap.data() : null;
-      const fresh = d && !d.closed && Date.now()-(d.updated||0) < 90000;
+    let snaps;
+    try{ snaps = await Promise.all(MM_CODES.map(c => db.doc("tables/"+c).get())); }catch(e){ lobErr("接続に失敗した。少し待ってもう一度。"); return; }
+    let free=null;
+    for (let k=0;k<MM_CODES.length;k++){
+      const code=MM_CODES[k], d = snaps[k].exists ? snaps[k].data() : null;
+      const fresh = d && !d.closed && Date.now()-(d.updated||0) < 30000;
       if (fresh){
         const humans = d.seats.filter(s=>!s.bot && !s.leave).length;
         if (d.hostId!==me.id && humans < MAX_SEATS && (d.seats.length < MAX_SEATS || d.seats.some(s=>s.bot))){ await joinRoom(code); return; }
         continue;
       }
-      if (db.p2p) continue;   // 部屋のIDは使われているのに応答が無い卓は飛ばす
-      await createRoom(code); return;
+      if (!free) free=code;
     }
+    if (free){ await createRoom(free); return; }
     lobErr("いまは公開卓がいっぱい。フリーマッチで部屋を作ってね。");
   } finally { mmBusy=false; lbl.textContent=old; btn.disabled=false; }
 }
 
+const APP_VER = "v34";
 async function connect(){
   const note = $("#netnote");
+  const vt = $("#verTag"); vt.textContent = APP_VER + (window.claude && typeof window.claude.use==="function" ? "・claude.ai" : "・MQTT");
   if (!window.claude || typeof window.claude.use!=="function"){
     note.textContent = "オンラインに接続中…";
-    try{ if (!window.Peer) await loadScript(P2P_LIB); if (!window.Peer) throw 0; db = makeP2P(); }catch(e){ note.textContent = "オンラインに繋がらないので、今はCPU卓で遊べます。"; return; }
+    try{ if (!window.mqtt) await loadScript(MQ_LIB); if (!window.mqtt) throw 0; }catch(e){ note.textContent = "オンラインに繋がらないので、今はCPU卓で遊べます。"; return; }
+    db = makeMQ();
+    for (let n=0; ; n++){
+      try{ await db.ready(25000); break; }
+      catch(e){ note.textContent = "オンラインにまだ繋がりません。このまま待つと自動でつなぎ直します（CPU卓はすぐ遊べます）。"; }
+    }
     online = true;
     ["#createBtn","#joinBtn","#quickBtn","#freeBtn"].forEach(q=>$(q).disabled=false);
     note.textContent = "オンライン対戦は誰かと自動でマッチ。フリーマッチでは部屋番号を友達に送って一緒に遊べます。";
@@ -1660,13 +1668,12 @@ async function createRoom(pubCode){
   let code=pubCode||"", ok=!!pubCode;
   for (let tries=0; tries<6 && !ok; tries++){
     code = Array.from({length:4},()=>A[rnd(A.length)]).join("");
-    if (db.p2p){ try{ await db.claim(code); ok=true; }catch(e){ if (!e || e.type!=="unavailable-id") return lobErr("接続に失敗した。少し待ってもう一度。"); } continue; }
     try{ const s = await db.doc("tables/"+code).get(); ok = !s.exists; }catch(e){ return lobErr("接続に失敗した。少し待ってもう一度。"); }
   }
   keys = await Crypto.keypair(code);
   mode="host"; me.name=clean(me.name);
   H = {deck:[], holes:{}, seen:{}};
-  st = blankTable(code, me.id); st.hostPub = keys ? keys.pub : null;
+  st = blankTable(code, me.id); st.hostPub = keys ? keys.pub : null; st.tid = Date.now().toString(36)+"-"+rnd(1e9).toString(36);
   if (pubCode){ st.pub = true; st.auto = true; st.mmAt = Date.now(); st.created = Date.now(); }
   addSeat(me.id, me.name, false, me.look);
   tableRef = db.doc("tables/"+code); playersRef = db.collection("tables/"+code+"/players");
@@ -1691,7 +1698,10 @@ async function joinRoom(code){
   } else {
     mode="guest"; st = data;
     showGame(); render();
-    const u = tableRef.onSnapshot(s => { if (!s.exists) return; const nd = s.data(); if ((nd.rev||0) < (st?.rev||0) && nd.handNo===st.handNo) return; st = nd; onState(); }, () => {});
+    let lastRx = Date.now();
+    const wd = setInterval(() => { if (mode==="guest" && st && st.pub && Date.now()-lastRx > 35000){ leaveTable(); lobErr("卓が見つからなくなったので探し直します…"); quickMatch(); } }, 5000);
+    unsubs.push(() => clearInterval(wd));
+    const u = tableRef.onSnapshot(s => { if (!s.exists) return; lastRx = Date.now(); const nd = s.data(); if ((nd.rev||0) < (st?.rev||0) && nd.handNo===st.handNo) return; st = nd; onState(); }, () => {});
     unsubs.push(u);
     sendReq(null);
     joinNamedRoom(code);
@@ -1717,7 +1727,7 @@ function tick(){ if (namedRoom) namedRoom.emit("tick", {r: st?.rev||0}).catch(()
 let reqBusy=false, reqPending=undefined, lastAct=null;
 function sendReq(act){
   if (act) lastAct = {...act, n: Date.now()+"-"+rnd(1e6), h: st ? st.handNo : 0};
-  reqPending = { name: me.name, look: me.look, pub: keys ? keys.pub : null, emo: me.emo || null, act: lastAct, left: act && act.t==="leave" ? true : false, ts: Date.now() };
+  reqPending = { tid: st ? st.tid || null : null, name: me.name, look: me.look, pub: keys ? keys.pub : null, emo: me.emo || null, act: lastAct, left: act && act.t==="leave" ? true : false, ts: Date.now() };
   flushReq();
 }
 async function flushReq(){
@@ -1755,7 +1765,7 @@ function onPlayers(snap){
   for (const d of snap.docs){
     const id=d.id, p=d.data()||{};
     if (id===st.hostId) continue;
-    if (st.pub && st.created && (p.ts||0) < st.created-60000) continue;
+    if (st.tid && p.tid !== st.tid) continue;
     if (p.pub && pubs[id]!==p.pub){ pubs[id]=p.pub; const s=seatOf(id); if (s && s.dealt && H.holes[id]) encryptFor(id).then(()=>pushState()); }
     let s = seatOf(id);
     if (!s && !p.left){
@@ -1785,8 +1795,9 @@ function handleReq(id, a){
 }
 function hostClock(){
   if (mode!=="host" || !st) return;
+  if (db && db.relay && !st.pub && Date.now()-(st.updated||0) > 25000) pushState();
   if (st.pub){
-    if (Date.now()-(st.updated||0) > 25000) pushState();
+    if (Date.now()-(st.updated||0) > 10000) pushState();
     if (!inHandPhase() && lastPSnap) onPlayers(lastPSnap);
   }
   if (st.toAct>=0 && inHandPhase()){

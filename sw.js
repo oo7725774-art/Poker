@@ -1,6 +1,6 @@
 // オフラインでも遊べるように、最初の起動で全部を保存する
-const CACHE = "poker-v33";
-const FILES = ["./", "index.html", "manifest.webmanifest", "lib/three.min.js", "lib/GLTFLoader.js", "lib/SkeletonUtils.js","lib/peerjs.min.js",
+const CACHE = "poker-v34";
+const FILES = ["./", "index.html", "manifest.webmanifest", "lib/three.min.js", "lib/GLTFLoader.js", "lib/SkeletonUtils.js","lib/mqtt.min.js",
   "models/male.json", "models/female.json", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
