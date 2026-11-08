@@ -1786,9 +1786,6 @@ function handleReq(id, a){
 function hostClock(){
   if (mode!=="host" || !st) return;
   if (st.pub){
-    if (st.phase==="wait" && st.mmAt && Date.now()-st.mmAt > 20000 && st.seats.filter(s=>!s.leave).length < 2){
-      addBot(); addBot(); st.mmAt=0; logLine("CPUが卓に入りました"); pushState(); maybeAutoStart(); return;
-    }
     if (Date.now()-(st.updated||0) > 25000) pushState();
     if (!inHandPhase() && lastPSnap) onPlayers(lastPSnap);
   }
@@ -2213,7 +2210,7 @@ function render(){
   const mySeat = st.seats[myIdx];
   $("#roomCode").textContent = st.pub ? "MATCH" : st.code;
   $("#inviteBtn").hidden = !(mode==="host"||mode==="guest") || !!st.pub;
-  const mmw = $("#mmWait"); if (mmw){ const humans = st.seats.filter(s=>!s.bot && !s.leave).length; mmw.hidden = !(st.pub && st.phase==="wait"); mmw.querySelector("small").textContent = humans>1 ? "プレイヤーが揃いました。まもなく開始…" : "見つからなければCPUが入ります"; }
+  const mmw = $("#mmWait"); if (mmw){ const humans = st.seats.filter(s=>!s.bot && !s.leave).length; mmw.hidden = !(st.pub && st.phase==="wait"); mmw.querySelector("small").textContent = humans>1 ? "プレイヤーが揃いました。まもなく開始…" : "誰かが入ると自動で始まります"; }
   $("#handNo").textContent = st.handNo ? "第"+st.handNo+"局" : "開始前";
   const winners = new Set((st.result && st.phase==="showdown") ? st.result.pots.flatMap(p=>p.winners) : []);
   const fiveSet = new Set((st.result && st.phase==="showdown") ? st.result.pots.flatMap(p=>p.five||[]) : []);
