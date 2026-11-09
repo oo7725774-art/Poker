@@ -1801,7 +1801,7 @@ async function quickMatch(){
   } finally { mmBusy=false; lbl.textContent=old; btn.disabled=false; }
 }
 
-const APP_VER = "v44";
+const APP_VER = "v45";
 async function connect(){
   const note = $("#netnote");
   { const vb = $("#verBadge"); if (vb) vb.textContent = APP_VER; }
@@ -2709,11 +2709,12 @@ function allinFx(s){
   const el = document.createElement("div"); el.className = "aix"+(mine?" mine":""); el.setAttribute("role","status");
   // v43 もう一段大げさに：白い閃光、集中線、衝撃波、1文字ずつ叩きつけ、チップの爆発、強い揺れ
   const word = "ALL IN".split("").map((c,i)=>c===" " ? `<span class="sp"></span>` : `<span style="--d:${(i*.07).toFixed(2)}s">${c}</span>`).join("");
-  el.innerHTML = `<i class="flash"></i><i class="speed"></i><canvas class="aic"></canvas><i class="lb t"></i><i class="lb b"></i><i class="ring"></i><i class="ring r2"></i><div class="aiw"><small>${esc(mine?"あなた":s.name)}</small><b>${word}</b>${amt?`<em>${fmt(amt)}</em>`:""}</div>`;
+  el.innerHTML = `<i class="flash"></i><i class="speed"></i><i class="lb t"></i><i class="lb b"></i><i class="ring"></i><i class="ring r2"></i><div class="aiw"><small>${esc(mine?"あなた":s.name)}</small><b>${word}</b>${amt?`<em>${fmt(amt)}</em>`:""}</div>`;
   document.body.appendChild(el);
   Snd.rise(0,.35); Snd.hit(.3); Snd.hit(.42); Snd.heart(.7); Snd.heart(1.4); Snd.tone(55,.3,1.5,"sawtooth",.08,35);
   "ALLIN".split("").forEach((_,i)=>Snd.tone(220+i*40,.3+i*.07,.12,"square",.05));
-  setTimeout(()=>{ Snd.jara(14,.8); coins(el.querySelector(".aic"), 70); }, 420);
+  // v45 オールインは緊張感を出すためコインは出さない（心音を足す）
+  Snd.heart(2.0);
   const g = document.getElementById("game"); g.classList.remove("shake1","shakeAI"); void g.offsetWidth; g.classList.add("shakeAI"); setTimeout(()=>g.classList.remove("shakeAI"), 1100);
   try{ navigator.vibrate && navigator.vibrate([60,40,120]); }catch(e){}
   setTimeout(()=>el.classList.add("out"), 2300); setTimeout(()=>el.remove(), 2800);
