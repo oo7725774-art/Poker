@@ -1018,7 +1018,26 @@ body.bonusround .stage{box-shadow:inset 0 0 60px rgba(255,95,224,.35),inset 0 0 
 @keyframes lbT{from{translate:0 -100%}to{translate:0 0}}
 @keyframes lbB{from{translate:0 100%}to{translate:0 0}}
 @keyframes aiPulse{0%,100%{filter:none}50%{filter:brightness(1.15)}}
-@media (prefers-reduced-motion:reduce){.aix,.aix *{animation:none!important}}
+/* v43 オールイン：さらに大げさに */
+.aix .aiw b{font-size:clamp(64px,17vw,170px);display:flex;animation:none}
+.aix .aiw b span{display:inline-block;animation:aiLetter .55s cubic-bezier(.2,1.8,.4,1) both;animation-delay:calc(.3s + var(--d,0s))}
+.aix .aiw b .sp{width:.3em}
+@keyframes aiLetter{0%{opacity:0;transform:scale(3.2) rotate(-12deg);filter:blur(6px)}60%{opacity:1;transform:scale(.88) rotate(2deg);filter:none}100%{transform:none}}
+.aix .aiw{animation:aiwIn .35s ease-out .25s both}
+@keyframes aiwIn{from{opacity:0;transform:scaleY(.2)}to{opacity:1;transform:none}}
+.aix .flash{position:absolute;inset:0;background:#fff;animation:aiFlash .45s ease-out .28s both}
+@keyframes aiFlash{0%{opacity:0}15%{opacity:.85}100%{opacity:0}}
+.aix .speed{position:absolute;inset:-20%;background:repeating-conic-gradient(from 0deg at 50% 50%,rgba(255,255,255,.0) 0deg 4deg,rgba(255,220,230,.22) 4deg 5deg);mask:radial-gradient(circle,transparent 18%,#000 60%);-webkit-mask:radial-gradient(circle,transparent 18%,#000 60%);animation:aiSpeed .9s linear infinite,aiSpeedIn .4s ease-out .25s both}
+@keyframes aiSpeed{to{transform:rotate(8deg)}}
+@keyframes aiSpeedIn{from{opacity:0}to{opacity:1}}
+.aix .ring{position:absolute;left:50%;top:50%;width:40vmin;height:40vmin;margin:-20vmin 0 0 -20vmin;border-radius:50%;border:6px solid rgba(255,80,120,.9);box-shadow:0 0 30px #ff2a55;animation:aiRing .8s ease-out .32s both}
+.aix .ring.r2{border-color:rgba(255,217,138,.8);animation-delay:.5s}
+@keyframes aiRing{0%{opacity:1;transform:scale(.2)}100%{opacity:0;transform:scale(2.6)}}
+.aix .aic{position:absolute;inset:0;width:100%;height:100%}
+.aix .lb{height:15vh}
+#game.shakeAI{animation:shakeAI 1s cubic-bezier(.36,.07,.19,.97) .3s both}
+@keyframes shakeAI{0%,100%{transform:none}10%{transform:translate(-14px,8px) rotate(-1deg)}20%{transform:translate(12px,-10px) rotate(1deg)}30%{transform:translate(-10px,6px)}40%{transform:translate(9px,-5px)}55%{transform:translate(-6px,3px)}70%{transform:translate(4px,-2px)}85%{transform:translate(-2px,1px)}}
+@media (prefers-reduced-motion:reduce){.aix,.aix *{animation:none!important}#game.shakeAI{animation:none}}
 
 /* ハンド履歴 */
 .sheet.hist{width:min(100%,520px)}
@@ -1782,7 +1801,7 @@ async function quickMatch(){
   } finally { mmBusy=false; lbl.textContent=old; btn.disabled=false; }
 }
 
-const APP_VER = "v42";
+const APP_VER = "v43";
 async function connect(){
   const note = $("#netnote");
   { const vb = $("#verBadge"); if (vb) vb.textContent = APP_VER; }
@@ -2688,11 +2707,16 @@ function allinFx(s){
   document.querySelectorAll(".aix").forEach(n=>n.remove());
   const mine = s.id===me.id, amt = (s.total||0) + (s.bet||0);
   const el = document.createElement("div"); el.className = "aix"+(mine?" mine":""); el.setAttribute("role","status");
-  el.innerHTML = `<i class="lb t"></i><i class="lb b"></i><div class="aiw"><small>${esc(mine?"あなた":s.name)}</small><b>ALL IN</b>${amt?`<em>${fmt(amt)}</em>`:""}</div>`;
+  // v43 もう一段大げさに：白い閃光、集中線、衝撃波、1文字ずつ叩きつけ、チップの爆発、強い揺れ
+  const word = "ALL IN".split("").map((c,i)=>c===" " ? `<span class="sp"></span>` : `<span style="--d:${(i*.07).toFixed(2)}s">${c}</span>`).join("");
+  el.innerHTML = `<i class="flash"></i><i class="speed"></i><canvas class="aic"></canvas><i class="lb t"></i><i class="lb b"></i><i class="ring"></i><i class="ring r2"></i><div class="aiw"><small>${esc(mine?"あなた":s.name)}</small><b>${word}</b>${amt?`<em>${fmt(amt)}</em>`:""}</div>`;
   document.body.appendChild(el);
-  Snd.hit(); Snd.heart(.25); Snd.heart(1.0); Snd.tone(55,.1,1.2,"sawtooth",.06,40);
-  const g = document.getElementById("game"); g.classList.remove("shake1"); void g.offsetWidth; g.classList.add("shake1"); setTimeout(()=>g.classList.remove("shake1"), 500);
-  setTimeout(()=>el.classList.add("out"), 1700); setTimeout(()=>el.remove(), 2200);
+  Snd.rise(0,.35); Snd.hit(.3); Snd.hit(.42); Snd.heart(.7); Snd.heart(1.4); Snd.tone(55,.3,1.5,"sawtooth",.08,35);
+  "ALLIN".split("").forEach((_,i)=>Snd.tone(220+i*40,.3+i*.07,.12,"square",.05));
+  setTimeout(()=>{ Snd.jara(14,.8); coins(el.querySelector(".aic"), 70); }, 420);
+  const g = document.getElementById("game"); g.classList.remove("shake1","shakeAI"); void g.offsetWidth; g.classList.add("shakeAI"); setTimeout(()=>g.classList.remove("shakeAI"), 1100);
+  try{ navigator.vibrate && navigator.vibrate([60,40,120]); }catch(e){}
+  setTimeout(()=>el.classList.add("out"), 2300); setTimeout(()=>el.remove(), 2800);
 }
 /* ハンド履歴：直近10局を自分の画面に残す */
 const HIST = [];
