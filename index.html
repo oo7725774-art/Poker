@@ -1801,7 +1801,7 @@ async function quickMatch(){
   } finally { mmBusy=false; lbl.textContent=old; btn.disabled=false; }
 }
 
-const APP_VER = "v43";
+const APP_VER = "v44";
 async function connect(){
   const note = $("#netnote");
   { const vb = $("#verBadge"); if (vb) vb.textContent = APP_VER; }
@@ -3673,20 +3673,15 @@ function bigWin(tier, won, hand){
 function coins(cv, n){
   if (!cv) return; const W = cv.width = innerWidth, H = cv.height = innerHeight, x = cv.getContext("2d");
   const ps = cv._ps || (cv._ps = []);
-  // v38 コインではなくカジノチップを飛び散らせる
   const CC = [["#e8283c","#ff6b78"],["#1f6fe0","#6aa5ff"],["#1d9a4a","#5fd38a"],["#151515","#555"],["#7b3fe0","#b48cff"],["#f2f2f2","#fff"]];
   for (let i=0;i<n;i++) ps.push({x: W/2 + (Math.random()-.5)*W*.5, y: H*.45, vx: (Math.random()-.5)*14, vy: -Math.random()*16-6, r: 9+Math.random()*7, a: Math.random()*6, va: .15+Math.random()*.3, c: CC[Math.floor(Math.random()*CC.length)], sp: Math.random()*6});
   if (cv._run) return; cv._run = true;
   const tick = () => { if (!cv.isConnected){ return; } x.clearRect(0,0,W,H);
     for (let i=ps.length-1;i>=0;i--){ const p = ps[i]; p.vy += .5; p.x += p.vx; p.y += p.vy; p.a += p.va; if (p.y > H+30){ ps.splice(i,1); continue; }
       const sx = Math.abs(Math.cos(p.a)); x.save(); x.translate(p.x,p.y); x.scale(Math.max(.15,sx),1);
-      const [c0, c1] = p.c, edge = p.c[0]==="#f2f2f2" ? "#1f6fe0" : "#fff";
-      x.fillStyle = c0; x.beginPath(); x.arc(0,0,p.r,0,Math.PI*2); x.fill();
-      x.fillStyle = edge; for (let k=0;k<6;k++){ const an = p.sp + k*Math.PI/3; x.save(); x.rotate(an); x.fillRect(p.r*.68, -p.r*.17, p.r*.32, p.r*.34); x.restore(); }
-      x.strokeStyle = "rgba(255,255,255,.75)"; x.lineWidth = Math.max(1, p.r*.09); x.setLineDash([p.r*.22, p.r*.16]); x.beginPath(); x.arc(0,0,p.r*.58,0,Math.PI*2); x.stroke(); x.setLineDash([]);
-      const gr = x.createRadialGradient(-p.r*.2,-p.r*.2,1,0,0,p.r*.5); gr.addColorStop(0,c1); gr.addColorStop(1,c0);
-      x.fillStyle = gr; x.beginPath(); x.arc(0,0,p.r*.46,0,Math.PI*2); x.fill();
-      x.strokeStyle = "rgba(0,0,0,.45)"; x.lineWidth = 1.2; x.beginPath(); x.arc(0,0,p.r,0,Math.PI*2); x.stroke(); x.restore(); }
+      // v44 金のコイン（ユーザーの希望で戻した）
+      const gr = x.createRadialGradient(-p.r*.3,-p.r*.3,1,0,0,p.r); gr.addColorStop(0,"#fff6c8"); gr.addColorStop(.5,"#ffcc3a"); gr.addColorStop(1,"#b36b00");
+      x.fillStyle = gr; x.beginPath(); x.arc(0,0,p.r,0,Math.PI*2); x.fill(); x.strokeStyle="rgba(120,60,0,.7)"; x.lineWidth=1.5; x.beginPath(); x.arc(0,0,p.r*.62,0,Math.PI*2); x.stroke(); x.restore(); }
     if (ps.length) requestAnimationFrame(tick); else cv._run = false; };
   requestAnimationFrame(tick);
 }
