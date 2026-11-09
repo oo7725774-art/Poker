@@ -1124,7 +1124,7 @@ body.bonusround .stage{box-shadow:inset 0 0 60px rgba(255,95,224,.35),inset 0 0 
 .stratpanel .sh{font-weight:800;font-size:13px;color:#fff;letter-spacing:.05em}
 .stratpanel .sh small{font-weight:500;font-size:11px;color:#9fb4c8;margin-left:6px}
 .stratpanel .emobar{padding-top:0;justify-content:flex-start}
-.tellbar{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.tellbar{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
 .tellbar button{display:flex;align-items:center;gap:5px;padding:7px 8px;border-radius:12px;font-size:12px;color:#e8fbff;cursor:pointer;background:linear-gradient(180deg,rgba(18,28,50,.95),rgba(8,12,24,.95));border:1px solid rgba(255,210,122,.55)}
 .tellbar button i{font-style:normal;font-size:18px}
 .tellbar button:disabled{opacity:.35;cursor:default}
@@ -1142,6 +1142,12 @@ body.ingame .stratpanel .emobar{order:0;grid-column:auto}
 .lobtop{position:relative}
 .verbadge{position:absolute;right:0;top:50%;translate:0 -50%;padding:5px 12px;border-radius:999px;font:800 14px/1 system-ui,sans-serif;letter-spacing:.06em;color:#06121c;background:#4ff3ff;box-shadow:0 0 12px rgba(79,243,255,.6)}
 .verbadge:empty{display:none}
+/* v39 CPUの性格 */
+.opps .seat .trait{font-size:10px;line-height:1;font-weight:800;letter-spacing:.04em;padding:2px 6px;border-radius:999px;width:max-content;margin:1px 0}
+.opps .seat .trait.honest{color:#06121c;background:#7dffb0}
+.opps .seat .trait.skeptic{color:#fff;background:#b46bff}
+.opps.crowd .seat .trait{font-size:8px;padding:1px 3px;margin:1px auto}
+.opps.many .seat .trait{margin:1px auto}
 /* v35 my turn */
 body.ingame.myturn::after{content:"";display:block;background:none;mix-blend-mode:normal;position:fixed;inset:0;pointer-events:none;z-index:55;border:3px solid rgba(79,243,255,.9);box-shadow:inset 0 0 28px rgba(79,243,255,.55),inset 0 0 70px rgba(255,95,224,.25);animation:myTurnGlow 1.1s ease-in-out infinite alternate}
 @keyframes myTurnGlow{from{opacity:.45}to{opacity:1}}
@@ -1276,12 +1282,12 @@ body.myturn #acts .btn{animation:actPulse 1.1s ease-in-out infinite alternate}
       </div>
       <div class="timer" id="timer" hidden><i id="timerBar"></i></div>
       <div class="strat" id="strat">
-        <button type="button" class="stratbtn" id="stratBtn" aria-expanded="false" aria-controls="stratPanel"><i>🎭</i>戦略 <b id="tellLeft">×3</b></button>
+        <button type="button" class="stratbtn" id="stratBtn" aria-expanded="false" aria-controls="stratPanel"><i>🎭</i>戦略 <b id="tellLeft">癖OK</b></button>
         <span class="pfnote" id="pfNote" hidden>ポーカーフェイス中</span>
         <div class="stratpanel" id="stratPanel" hidden>
           <div class="sh">表情 <small>何度でも（5秒に1回）</small></div>
           <div class="emobar" id="emoBar" role="group" aria-label="表情スタンプ"></div>
-          <div class="sh">癖を見せる <small id="tellInfo">残り3回・5局ごとに1回回復</small></div>
+          <div class="sh">癖を見せる <small>素直なCPUは信じ、疑り深いCPUは逆に読む</small> <small id="tellInfo">各ラウンド1回</small></div>
           <div class="tellbar" id="tellBar" role="group" aria-label="癖"></div>
           <div class="sh">ポーカーフェイス <small>考え中・負けたときなどの反応を隠す</small></div>
           <button type="button" class="pfbtn" id="pfBtn" aria-pressed="false">OFF</button>
@@ -1758,7 +1764,7 @@ async function quickMatch(){
   } finally { mmBusy=false; lbl.textContent=old; btn.disabled=false; }
 }
 
-const APP_VER = "v39";
+const APP_VER = "v40";
 async function connect(){
   const note = $("#netnote");
   { const vb = $("#verBadge"); if (vb) vb.textContent = APP_VER; }
@@ -2010,7 +2016,10 @@ function addBot(){
   const used = new Set(st.seats.map(s=>s.name));
   const name = BOT_NAMES.find(n=>!used.has(n)) || ("CPU"+st.seats.length);
   addSeat("bot-"+(["ミカ","ヒナ","ルナ"].includes(name)?"f":"m")+Math.random().toString(36).slice(2,8), name, true);
+  st.seats[st.seats.length-1].trait = Math.random()<.5 ? "honest" : "skeptic";
 }
+// v39 CPUの性格：素直＝癖を信じる／疑り深い＝逆に読む
+const TRAIT = {honest:"素直", skeptic:"疑り深い"};
 function seatOf(id){ return st.seats.find(s=>s.id===id); }
 function inHandPhase(){ return ["preflop","flop","turn","river"].includes(st.phase); }
 function logLine(t){ st.log.unshift(t); st.log = st.log.slice(0,14); }
@@ -2047,7 +2056,6 @@ async function startHand(){
   }
   st.over = null;
   st.handNo++;
-  if (st.handNo % TELL_REGEN === 0) st.seats.forEach(s=>{ if (!s.bot && s.tellN!==undefined) s.tellN = Math.min(TELL_MAX, s.tellN+1); });
   // ジャックポット：毎局、店が積み増す（プレイヤーのチップは減らない）
   if (JP_ON){ if (!(st.jp>0)) st.jp = JP_BASE; st.jp += JP_ADD * players.length; } else st.jp = 0;
   // ボーナスラウンド：ときどき特別な局になる
@@ -2277,8 +2285,6 @@ const EMO = Object.fromEntries(EMOTES.map(x=>[x.k,x]));
 const TELLS = [
   {k:"t_chips",   e:"🪙", jp:"チップをいじる", sig:.5},
   {k:"t_recheck", e:"🃏", jp:"手札を見直す",   sig:-.5},
-  {k:"t_face",    e:"🤚", jp:"顔を触る",       sig:-1},
-  {k:"t_lean",    e:"😤", jp:"前のめり",       sig:1},
   {k:"t_sigh",    e:"😮‍💨", jp:"ため息",         sig:-1},
   {k:"t_away",    e:"👀", jp:"目をそらす",     sig:1},
 ];
@@ -2311,11 +2317,12 @@ function buildStrat(){
     if (mode==="guest") sendReq(null); else if (st){ const s = seatOf(me.id); if (s){ s.pf = me.pf; pushState(); } }
     stratUI(); });
 }
-function tellsLeft(){ const s = st && seatOf(me.id); return s ? (s.tellN===undefined ? TELL_MAX : s.tellN) : TELL_MAX; }
+function tellsLeft(){ const s = st && seatOf(me.id); return s && inHandPhase() && s.dealt && !s.folded && !tellUsedNow(s) ? 1 : 0; }
 function stratUI(){
   const n = tellsLeft();
-  $("#tellLeft").textContent = "×"+n;
-  $("#tellInfo").textContent = `残り${n}回・${TELL_REGEN}局ごとに1回回復（最大${TELL_MAX}）`;
+  const used = st && tellUsedNow(seatOf(me.id));
+  $("#tellLeft").textContent = n ? "癖OK" : used ? "癖済" : "癖";
+  $("#tellInfo").textContent = n ? "このラウンドはあと1回" : used ? "次のラウンドでまた使える" : "手札が配られている間に使える";
   document.querySelectorAll("#tellBar button").forEach(b=>{ b.disabled = n<=0 || Date.now() < emoCool; });
   const pb = $("#pfBtn"); pb.textContent = me.pf ? "ON" : "OFF"; pb.setAttribute("aria-pressed", String(!!me.pf)); pb.classList.toggle("on", !!me.pf);
   $("#pfNote").hidden = !me.pf;
@@ -2351,16 +2358,21 @@ function sendEmote(k){
 }
 const EMO_ALIAS = {cool:"smug", poker:"smug", think:"nervous", shock:"nervous"};
 // 癖を1回使う（親が数える）。この局で見せた癖はCPUが読む
+// v40 癖は各ラウンド（プリフロップ・フロップ・ターン・リバー）に1回
+function tellUsedNow(s){ return !!(s && s.tell && s.tell.h===st.handNo && s.tell.ph===st.phase); }
 function useTell(s, k){
-  const n = s.tellN===undefined ? TELL_MAX : s.tellN; if (n<=0) return false;
-  s.tellN = n-1; s.tell = {k, h: st.handNo}; logLine(s.name+" "+EMOX[k].jp+"…");
+  if (!inHandPhase() || !s.dealt || s.folded || tellUsedNow(s)) return false;
+  s.tell = {k, h: st.handNo, ph: st.phase}; logLine(s.name+" "+EMOX[k].jp+"…");
   return true;
 }
 function tellRead(bot){
-  // 卓にいる人がこの局で見せた癖を読む。信じるか裏読みするかは半々なので判断が揺れる
+  // 卓にいる人がこの局で見せた癖を読む。素直なCPUは信じ、疑り深いCPUは逆に読む（たまに読み違える）
   let adj = 0;
+  if (!bot.trait) bot.trait = Math.random()<.5 ? "honest" : "skeptic";
   st.seats.forEach(o=>{ if (o===bot || o.bot || !o.tell || o.tell.h!==st.handNo || o.folded) return;
-    const t = EMOX[o.tell.k]; if (!t) return; adj += (Math.random()<.5 ? -1 : 1) * t.sig * .09; });
+    const t = EMOX[o.tell.k]; if (!t) return;
+    let dir = bot.trait==="honest" ? -1 : 1; if (Math.random()<.15) dir = -dir;
+    adj += dir * t.sig * .14; });
   return adj;
 }
 function seatEmote(s, k){ k = EMO_ALIAS[k] || k; if (!s || !EMOX[k]) return; s.emo = {k, n: s.id.slice(0,6)+"-"+Date.now()+"-"+(emoN++)}; }
@@ -2483,7 +2495,7 @@ function render(){
     if (s.busted && !s.dealt) tag = "BUST";
     const em = emoNow(s.id);
     return `<div data-id="${esc(s.id)}" class="koma seat ${turn?"turn":""} ${s.folded?"folded":""} ${winners.has(s.id)?"win":""}">
-      <div class="nm">${i===st.dealer?'<b class="dbtn">D</b>':""}<span>${esc(s.name)}${s.bot?' <small class="muted">CPU</small>':""}</span></div>
+      <div class="nm">${i===st.dealer?'<b class="dbtn">D</b>':""}<span>${esc(s.name)}${s.bot?' <small class="muted">CPU</small>':""}</span></div>${s.bot&&s.trait?`<div class="trait ${s.trait}">${TRAIT[s.trait]}</div>`:""}
       <div class="pl"><div class="mini">${cards}</div></div>
       <div class="tag">${esc(tag==="SB"||tag==="BB"?"":tag)}</div>
     </div>`;
