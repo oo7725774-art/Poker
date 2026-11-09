@@ -1148,6 +1148,24 @@ body.ingame .stratpanel .emobar{order:0;grid-column:auto}
 .opps .seat .trait.skeptic{color:#fff;background:#b46bff}
 .opps.crowd .seat .trait{font-size:8px;padding:1px 3px;margin:1px auto}
 .opps.many .seat .trait{margin:1px auto}
+/* v41 自分の癖の動き */
+#myCards.peek{animation:peek 1.1s ease-in-out 2}
+@keyframes peek{0%,100%{transform:none}40%,60%{transform:translateY(-28px) rotateX(28deg) scale(1.05)}}
+#holder{position:relative}
+.fpchips{position:absolute;right:-6px;bottom:6px;display:flex;flex-direction:column-reverse;z-index:3;pointer-events:none}
+.fpchips i{display:block;width:34px;height:9px;margin-top:-3px;border-radius:50%;background:#e8283c;border:2px dashed #fff;box-shadow:0 2px 0 rgba(0,0,0,.5);animation:riffle .48s ease-in-out infinite}
+.fpchips i:nth-child(2n){background:#1f6fe0}.fpchips i:nth-child(3n){background:#1d9a4a}
+.fpchips i:nth-child(2){animation-delay:.06s}.fpchips i:nth-child(3){animation-delay:.12s}.fpchips i:nth-child(4){animation-delay:.18s}.fpchips i:nth-child(5){animation-delay:.24s}.fpchips i:nth-child(6){animation-delay:.3s}
+@keyframes riffle{0%,100%{transform:none}50%{transform:translate(-6px,-10px) rotate(-12deg)}}
+.fpsigh{position:absolute;left:50%;top:20%;translate:-50% 0;font:800 26px/1 var(--f-jp,sans-serif);color:rgba(255,255,255,.9);text-shadow:0 0 18px rgba(255,255,255,.7);pointer-events:none;animation:sigh 2.5s ease-out both;z-index:5}
+@keyframes sigh{0%{opacity:0;transform:translateY(10px) scale(.8)}25%{opacity:1}100%{opacity:0;transform:translateY(-60px) scale(1.4);filter:blur(6px)}}
+.stage.lookaway{animation:lookaway 2.3s ease-in-out}
+@keyframes lookaway{0%,100%{transform:none;filter:none}25%,70%{transform:translateX(-18%) perspective(900px) rotateY(14deg);filter:blur(2px) brightness(.8)}}
+/* 自分の顔アップ */
+#meK .who{position:relative}
+#meK .who .facecam.myface{position:static;display:block;width:84px;height:84px;border-radius:50%;border:3px solid #ffd24a;box-shadow:0 0 14px rgba(255,210,74,.5);background:radial-gradient(circle,#1b2540,#070b16);flex:none}
+@media (max-width:560px){#meK .who .facecam.myface{width:56px;height:56px;border-width:2px}}
+@media (prefers-reduced-motion:reduce){#myCards.peek,.fpchips i,.fpsigh{animation:none}}
 /* v35 my turn */
 body.ingame.myturn::after{content:"";display:block;background:none;mix-blend-mode:normal;position:fixed;inset:0;pointer-events:none;z-index:55;border:3px solid rgba(79,243,255,.9);box-shadow:inset 0 0 28px rgba(79,243,255,.55),inset 0 0 70px rgba(255,95,224,.25);animation:myTurnGlow 1.1s ease-in-out infinite alternate}
 @keyframes myTurnGlow{from{opacity:.45}to{opacity:1}}
@@ -1764,7 +1782,7 @@ async function quickMatch(){
   } finally { mmBusy=false; lbl.textContent=old; btn.disabled=false; }
 }
 
-const APP_VER = "v40";
+const APP_VER = "v41";
 async function connect(){
   const note = $("#netnote");
   { const vb = $("#verBadge"); if (vb) vb.textContent = APP_VER; }
@@ -2378,6 +2396,12 @@ function tellRead(bot){
 function seatEmote(s, k){ k = EMO_ALIAS[k] || k; if (!s || !EMOX[k]) return; s.emo = {k, n: s.id.slice(0,6)+"-"+Date.now()+"-"+(emoN++)}; }
 // CPUの心理戦：強い手でも弱い手でも、ときどき表情でゆさぶる
 function botEmoteFor(s, action, str){
+  // v41 CPUの癖：素直なCPUは本当の強さどおり、疑り深いCPUは逆の癖を見せる（たまに気まぐれ）
+  if (action!=="fold" && Math.random() < .3 && !tellUsedNow(s)){
+    let strong = str > .62; if (s.trait==="skeptic") strong = !strong; if (Math.random()<.15) strong = !strong;
+    const pool = TELLS.filter(t=> strong ? t.sig>0 : t.sig<0); const t = pool[rnd(pool.length)];
+    if (t && useTell(s, t.k)){ seatEmote(s, t.k); return; }
+  }
   if (Math.random() > .32) return;
   let k;
   if (action==="fold") k = Math.random()<.5 ? "angry" : "nervous";
@@ -2399,7 +2423,9 @@ function showEmote(id, k){
   const mine = id===me.id;
   // 吹き出しは出さず、顔の表情だけで伝える。自分のは押したスタンプを光らせる
   if (mine){ document.querySelectorAll("#emoBar button").forEach(b=>b.classList.toggle("on", b.dataset.emo===k)); clearTimeout(showEmote.t); showEmote.t = setTimeout(()=>document.querySelectorAll("#emoBar button.on").forEach(b=>b.classList.remove("on")), 5200); }
-  if (!mine) Snd.tone(880,0,.05,"sine",.07);
+  if (mine && isTell(k)) selfTellFx(k);
+  if (!mine && k==="t_chips") for (let i=0;i<5;i++) Snd.clack(i*.45, .45);
+  if (!mine && !isTell(k)) Snd.tone(880,0,.05,"sine",.07);
   setTimeout(()=>{ if (st) render(); }, 5300);
 }
 function checkEmotes(){
@@ -2408,6 +2434,16 @@ function checkEmotes(){
     if (!(s.id in emoSeen)){ emoSeen[s.id] = n; return; }
     if (n && emoSeen[s.id] !== n){ emoSeen[s.id] = n; showEmote(s.id, s.emo.k); }
   });
+}
+// v41 自分が癖を出したとき、自分の画面でも動きを見せる
+function selfTellFx(k){
+  const reduce = matchMedia("(prefers-reduced-motion:reduce)").matches;
+  if (k==="t_recheck"){ const c = $("#myCards"); if (c){ c.classList.remove("peek"); void c.offsetWidth; c.classList.add("peek"); setTimeout(()=>c.classList.remove("peek"), 2200); } Snd.card(); setTimeout(()=>Snd.card(), 900); }
+  if (k==="t_chips"){ const h = $("#holder"); if (h){ h.querySelectorAll(".fpchips").forEach(n=>n.remove()); const d = document.createElement("div"); d.className = "fpchips"; d.innerHTML = "<i></i>".repeat(6); h.appendChild(d); setTimeout(()=>d.remove(), 4800); }
+    for (let i=0;i<8;i++) setTimeout(()=>Snd.clack(0,.7), 300 + i*480); }
+  if (k==="t_sigh"){ const mk = $("#meK"); if (mk){ const d = document.createElement("div"); d.className = "fpsigh"; d.textContent = "はぁ…"; mk.appendChild(d); setTimeout(()=>d.remove(), 2600); }
+    Snd.noise(0, 1.1, .1, 500); }
+  if (k==="t_away" && !reduce){ const sg = document.querySelector(".stage"); if (sg){ sg.classList.remove("lookaway"); void sg.offsetWidth; sg.classList.add("lookaway"); setTimeout(()=>sg.classList.remove("lookaway"), 2400); } }
 }
 function emoNow(id){ const e = emoLive[id]; return e && performance.now() < e.until ? e : null; }
 
@@ -2505,7 +2541,9 @@ function render(){
   const oppSeats = order.filter(s=>s && !(s.busted && s.chips===0));
   const avHTML = [];
   if (World3D){
-    const pos = World3D.sync(oppSeats.filter((s,k)=>seatEls[k]).map(s=>{ const i=st.seats.indexOf(s); return {id:s.id, look:s.look||null, emo: emoNow(s.id), hold: s.dealt && !s.folded && inHandPhase(), turn:i===st.toAct, mood: s.pf ? "" : winners.has(s.id) ? "win" : (s.folded && inHandPhase()) ? "sad" : (i===st.toAct ? "think" : "")}; }));
+    const pos = World3D.sync(oppSeats.filter((s,k)=>seatEls[k]).map(s=>{ const i=st.seats.indexOf(s); return {id:s.id, look:s.look||null, emo: emoNow(s.id), hold: s.dealt && !s.folded && inHandPhase(), turn:i===st.toAct, mood: s.pf ? "" : winners.has(s.id) ? "win" : (s.folded && inHandPhase()) ? "sad" : (i===st.toAct ? "think" : "")}; }),
+      mySeat ? {id: mySeat.id, look: mySeat.look || me.look || null, emo: emoNow(mySeat.id), hold: mySeat.dealt && !mySeat.folded && inHandPhase(), mood: mySeat.pf ? "" : winners.has(mySeat.id) ? "win" : (mySeat.folded && inHandPhase()) ? "sad" : (st.seats.indexOf(mySeat)===st.toAct ? "think" : "")} : null);
+    { const who = document.querySelector("#meK .who"); if (who && mySeat){ const fc = World3D.faceCanvas(mySeat.id); fc.classList.add("myface"); const em = emoNow(mySeat.id); fc.dataset.emo = em ? em.k : ""; if (fc.parentNode!==who) who.prepend(fc); } }
     seatEls.forEach((el,k)=>{ el.style.left = pos[k].x+"%"; el.style.top = pos[k].y+"%"; el.style.zIndex = String(2 + Math.round(pos[k].y/10));
       const id = el.dataset.id; if (id){ const fc = World3D.faceCanvas(id); const em = emoNow(id); fc.dataset.emo = em ? em.k : ""; el.classList.add("hasface"); el.prepend(fc); } });
     // v37 名札が画面や卓の外へはみ出さないように内側へ寄せる
@@ -3035,10 +3073,17 @@ const World3D = (() => {
     [-1,1].forEach(sd=>{ const c = new T.Mesh(new T.BoxGeometry(.25,.36,.006), cardMat); c.position.set(sd*.07, 0, 0); c.rotation.set(-.5, 0, sd*-.16); c.castShadow = true; cards.add(c); });
     if (ok){ const a=new T.Vector3().setFromMatrixPosition(bones.LeftHand.matrixWorld), b=new T.Vector3().setFromMatrixPosition(bones.RightHand.matrixWorld); a.add(b).multiplyScalar(.5); cards.position.set(a.x, a.y+.12, a.z+.06); }
     else cards.position.set(0,1.62,.92);
+    // v41 癖の小道具：手元のチップの山と、ため息の白い息
+    const chipsProp = new T.Group(); chipsProp.visible = false; body.add(chipsProp);
+    [0xe8283c,0x1f6fe0,0x1d9a4a,0xe8283c,0x111111,0x1f6fe0].forEach((c,i)=>{ const d = new T.Mesh(new T.CylinderGeometry(.075,.075,.02,20), std(c,.5,.1)); d.position.y = i*.022; chipsProp.add(d); });
+    chipsProp.position.set(cards.position.x + .3, cards.position.y - .2, cards.position.z + .1);
+    const puffTex = tex(64,64,(x,w,hh)=>{ const g = x.createRadialGradient(w/2,hh/2,2,w/2,hh/2,w/2); g.addColorStop(0,"rgba(255,255,255,.95)"); g.addColorStop(1,"rgba(255,255,255,0)"); x.fillStyle=g; x.fillRect(0,0,w,hh); });
+    const puff = new T.Sprite(new T.SpriteMaterial({map:puffTex, transparent:true, depthWrite:false})); puff.visible = false; body.add(puff);
+    const cards0 = cards.position.clone();
     const halo = new T.PointLight(0xffd27a, 0, 3.2); halo.position.set(0, 3.3, .6); root.add(halo);
     const head = new T.Object3D(), mouth = new T.Object3D(), sweat = new T.Object3D(), loLip = new T.Object3D(), mIn = new T.Object3D();
     sc.add(root);
-    return {root, body, head, mouth, halo, cards, mood:"", phase: Math.random()*6, eyes:[], brows:[], sweat, loLip, mIn, gl:true, headBone: ok ? bones.Head : null, headQ0: ok ? bones.Head.quaternion.clone() : null};
+    return {root, body, head, mouth, halo, cards, cards0, chipsProp, puff, mood:"", phase: Math.random()*6, eyes:[], brows:[], sweat, loLip, mIn, gl:true, headBone: ok ? bones.Head : null, headQ0: ok ? bones.Head.quaternion.clone() : null};
   }
   function poseHead(p){
     if (!p.headBone) return;
@@ -3229,6 +3274,15 @@ const World3D = (() => {
     // 腰を軸に傾ける
     _pv2.copy(_pv).applyAxisAngle(new T.Vector3(1,0,0), lean);
     p.body.position.set(0, (p.body.position.y||0) + dy + (_pv.y - _pv2.y), dz + (_pv.z - _pv2.z));
+    // v41 癖の動き：小道具も動かす
+    if (p.chipsProp){
+      p.chipsProp.visible = em==="t_chips";
+      if (em==="t_chips") p.chipsProp.children.forEach((c,i)=>{ c.position.y = i*.022 + Math.max(0, Math.sin(s*9 - i*.9))*.07; c.rotation.z = Math.sin(s*9 - i*.9)*.25; });
+      if (em==="t_recheck"){ const u = Math.max(0, Math.sin(age*2.4)); p.cards.visible = true; p.cards.position.set(p.cards0.x, p.cards0.y + u*.25, p.cards0.z - u*.14); p.cards.rotation.x = u*.8; }
+      else { p.cards.position.copy(p.cards0); p.cards.rotation.x = 0; }
+      p.puff.visible = em==="t_sigh";
+      if (em==="t_sigh"){ const c = (s*.8)%1; p.puff.position.set(0, 2.36 - c*.1, .3 + c*.45); p.puff.scale.setScalar(.15 + c*.55); p.puff.material.opacity = Math.sin(c*Math.PI)*.85; }
+    }
     if (em && EMO_LIGHT[em]){ p.halo.color.setHex(EMO_LIGHT[em]); p.halo.intensity = 2.2 + Math.sin(s*6)*.6; }
     else p.halo.color.setHex(0xffd27a);
     p.fk = em || "";
@@ -3290,7 +3344,7 @@ const World3D = (() => {
     g.restore();
   }
   // 名札の顔アップ：小さな別レンダラーで各人の顔を映す
-  let faceR = null, faceT = 0; const faceCams = new Map(); const faceCam = new T.PerspectiveCamera(24, 1, .1, 20);
+  let faceR = null, faceT = 0; const faceCams = new Map(); const faceCam = new T.PerspectiveCamera(24, 1, .1, 20); faceCam.layers.enable(1);
   const _hp = new T.Vector3(), _dir = new T.Vector3();
   function faceCanvas(id){
     let c = faceCams.get(id);
@@ -3343,8 +3397,8 @@ const World3D = (() => {
   }
   const World3DApi = {
     mount(stage){ loadModels(); stageEl = stage; stage.prepend(canvas); stage.classList.add("has3d"); new ResizeObserver(()=>{ resize(); if (st) render(); }).observe(stage); resize(); if (!running){ running=true; requestAnimationFrame(tick); } },
-    sync(list){
-      const ids = new Set(list.map(x=>x.id));
+    sync(list, self){
+      const ids = new Set(list.map(x=>x.id)); if (self) ids.add(self.id);
       people.forEach((p,id)=>{ if (!ids.has(id)){ scene.remove(p.root); people.delete(id); } });
       const n = list.length, res = [];
       list.forEach((x,k)=>{
@@ -3355,6 +3409,14 @@ const World3D = (() => {
         p.mood = x.mood; p.hold = x.hold; p.emo = x.emo || null;
         const pr = project(SRX*Math.cos(a), 3.35, -SRZ*Math.sin(a)); pr.t = project(RX*.74*Math.cos(a), TOP, -RZ*.86*Math.sin(a)); res.push(pr);
       });
+      // v41 自分：手前の席に置くが、レイヤー1にしてメインカメラには映さない（顔アップ専用）
+      if (self){
+        const lk = self.look ? JSON.stringify(self.look) : "";
+        let p = people.get(self.id); if (p && p.lk!==lk){ scene.remove(p.root); people.delete(self.id); p=null; }
+        if (!p){ p = build(self.id, self.look); p.lk = lk; p.self = true; people.set(self.id, p); }
+        p.root.traverse(o=>o.layers.set(1)); place(p, -Math.PI/2);
+        p.mood = self.mood; p.hold = self.hold; p.emo = self.emo || null;
+      }
       return res;
     },
     portrait(look, fk){
