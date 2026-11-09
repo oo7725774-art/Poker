@@ -1,0 +1,13 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ポーカー 更新</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#070b16;color:#dff8ff;font:16px/1.6 system-ui,sans-serif;text-align:center;padding:16px}b{color:#4ff3ff}</style></head>
+<body><div><p id="m">最新版に更新しています…</p></div>
+<script>
+// 古い保存データ（サービスワーカーとキャッシュ）を全部消してから最新版を開き直す
+(async()=>{
+  const m = document.getElementById("m");
+  try{ if (navigator.serviceWorker){ const rs = await navigator.serviceWorker.getRegistrations(); await Promise.all(rs.map(r=>r.unregister())); } }catch(e){}
+  try{ if (window.caches){ const ks = await caches.keys(); await Promise.all(ks.map(k=>caches.delete(k))); } }catch(e){}
+  m.innerHTML = "更新できました。<b>ゲームを開きます…</b>";
+  setTimeout(()=>location.replace("./?v="+Date.now()), 800);
+})();
+</script></body></html>
