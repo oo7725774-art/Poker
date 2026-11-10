@@ -601,7 +601,7 @@ body{font-size:16px}
 
 /* ===== 写実寄りの絵：トランプ、チップ、手 ===== */
 .card:not(.empty),.stage.has3d .felt .card.lg:not(.empty),.fan .card,#fx .fxcards .card{background:linear-gradient(165deg,#ffffff 0%,#fbf8f1 55%,#efe9dc 100%)!important;border:1px solid #cfc6b2!important;border-radius:calc(var(--w)*.08)!important;color:#141414!important;font-family:"Cormorant Garamond","Times New Roman",serif!important;font-weight:700!important}
-.card.red{color:#b5121b!important}
+.card.red,.card.red:not(.empty),.stage.has3d .felt .card.lg.red:not(.empty),.fan .card.red,#fx .fxcards .card.red{color:#b5121b!important}
 .card.empty,.stage.has3d .felt .card.empty{background:rgba(0,0,0,.14)!important;border:2px solid rgba(243,217,142,.3)!important;box-shadow:none!important}
 .card:not(.back):not(.empty){box-shadow:0 1px 0 #fff inset,0 2px 2px rgba(0,0,0,.25),0 8px 16px rgba(0,0,0,.3)!important}
 .card .r{left:calc(var(--w)*.08);top:calc(var(--w)*.04);font-size:calc(var(--w)*.34)!important;letter-spacing:-.04em}
@@ -1821,7 +1821,7 @@ async function quickMatch(){
   } finally { mmBusy=false; lbl.textContent=old; btn.disabled=false; }
 }
 
-const APP_VER = "v50";
+const APP_VER = "v51";
 async function connect(){
   const note = $("#netnote");
   { const vb = $("#verBadge"); if (vb) vb.textContent = APP_VER; }
