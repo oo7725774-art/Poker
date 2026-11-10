@@ -1204,7 +1204,11 @@ body.ingame .stratpanel .emobar{order:0;grid-column:auto}
 .vicx{position:fixed;inset:0;z-index:70;display:grid;place-items:center;background:radial-gradient(ellipse at 50% 45%,rgba(60,36,0,.55),rgba(0,0,0,.88) 70%);animation:vIn .5s ease-out both;overflow:hidden}
 .vicx.out{opacity:0;transition:opacity .5s}
 @keyframes vIn{from{opacity:0}to{opacity:1}}
-.vicx .vflash{position:absolute;inset:0;background:#fff8d8;animation:aiFlash .6s ease-out .8s both;pointer-events:none}
+.vicx .vflash{position:absolute;inset:0;background:#fff8d8;animation:aiFlash .5s ease-out .1s both;pointer-events:none}
+.vicx.short{background:radial-gradient(ellipse at 50% 50%,rgba(60,36,0,.45),rgba(0,0,0,.6) 70%)}
+.vicx.short .vrays{top:50%;animation:vSpin 14s linear infinite,aiSpeedIn .4s ease-out .1s both}
+.vicx.short .vword{font-size:clamp(64px,17vw,180px);animation:vPulse .9s ease-in-out .8s infinite alternate}
+@keyframes vPulse{to{filter:drop-shadow(0 4px 0 #5a3400) drop-shadow(0 0 40px rgba(255,210,80,1))}}
 .vicx .vrays{position:absolute;left:50%;top:42%;width:220vmax;height:220vmax;margin:-110vmax 0 0 -110vmax;background:repeating-conic-gradient(from 0deg,rgba(255,214,90,.0) 0deg 8deg,rgba(255,214,90,.13) 8deg 11deg);mask:radial-gradient(circle,#000 0,transparent 32%);-webkit-mask:radial-gradient(circle,#000 0,transparent 32%);animation:vSpin 14s linear infinite,aiSpeedIn .8s ease-out .8s both;pointer-events:none}
 @keyframes vSpin{to{transform:rotate(360deg)}}
 .vicx .vcoin{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
@@ -1842,7 +1846,7 @@ async function quickMatch(){
   } finally { mmBusy=false; lbl.textContent=old; btn.disabled=false; }
 }
 
-const APP_VER = "v52";
+const APP_VER = "v53";
 async function connect(){
   const note = $("#netnote");
   { const vb = $("#verBadge"); if (vb) vb.textContent = APP_VER; }
@@ -3778,36 +3782,21 @@ function checkVictory(){
   gLastHand = st.handNo; gPeak = Math.max(gPeak, st.seats.filter(x=>!x.leave).length);
   if (!st || !st.over || !st.over.id || st.over.id!==me.id) return;
   const key = (st.tid||st.code)+":"+st.handNo; if (vicSeen===key) return; vicSeen = key;
-  setTimeout(victoryFx, 1400);
+  setTimeout(victoryFx, 900);
 }
 function victoryFx(){
+  // v53 短く：VICTORYを派手に出して、約2.5秒で自動で消える
   document.querySelectorAll(".vicx").forEach(n=>n.remove());
-  const s = seatOf(me.id), chips = s ? s.chips : 0, beaten = Math.max(1, gPeak - 1), hands = st.handNo;
-  const el = document.createElement("div"); el.className = "vicx"; el.setAttribute("role","dialog"); el.setAttribute("aria-label","優勝");
-  const word = "VICTORY".split("").map((c,i)=>`<span style="--d:${(1.0+i*.08).toFixed(2)}s">${c}</span>`).join("");
-  el.innerHTML = `<i class="vflash"></i><i class="vrays"></i><canvas class="vcoin"></canvas>
-    <div class="vbox"><div class="vtro">🏆</div><div class="vword">${word}</div><div class="vjp">優勝</div>
-    <div class="vamt"><small>獲得チップ</small><b>0</b></div>
-    <div class="vsub">${beaten}人を倒し、${hands}局を勝ち抜いた</div>
-    <button type="button" class="btn vbtn">${mode==="guest" ? "閉じる" : "もう一度遊ぶ"}</button></div>`;
+  const el = document.createElement("div"); el.className = "vicx short"; el.setAttribute("role","status"); el.setAttribute("aria-label","優勝");
+  const word = "VICTORY".split("").map((c,i)=>`<span style="--d:${(.15+i*.06).toFixed(2)}s">${c}</span>`).join("");
+  el.innerHTML = `<i class="vflash"></i><i class="vrays"></i><canvas class="vcoin"></canvas><div class="vbox"><div class="vword">${word}</div></div>`;
   document.body.appendChild(el);
-  // 音：ドラムロール → ファンファーレ → 和音
-  for (let i=0;i<14;i++) Snd.noise(i*.055, .05, .18, 900);
-  Snd.hit(.8); Snd.rise(.2,.6);
-  const fan = [[523,.85,.14],[523,.99,.14],[523,1.13,.14],[659,1.27,.5],[587,1.8,.18],[659,1.98,.18],[784,2.16,.18],[1047,2.34,1.1]];
-  fan.forEach(([f,t,d])=>{ Snd.tone(f,t,d,"square",.09); Snd.tone(f*2,t,d,"triangle",.04); });
-  [523,659,784,1047].forEach(f=>Snd.tone(f,2.34,1.6,"sawtooth",.045));
-  setTimeout(()=>{ Snd.jara(18,1.2); }, 2300);
-  // 演出：コインの雨と紙吹雪を何度も
-  const cv = el.querySelector(".vcoin");
-  [900,1700,2500,3400,4600].forEach((t,i)=>setTimeout(()=>{ if (el.isConnected) coins(cv, 70); }, t));
-  [1000,2300,3800].forEach(t=>setTimeout(()=>{ if (el.isConnected) confetti(220); }, t));
-  setTimeout(()=>countUp(el.querySelector(".vamt b"), 0, chips, ""), 1500);
-  const g = document.getElementById("game"); if (g){ g.classList.remove("shakeAI"); void g.offsetWidth; g.classList.add("shakeAI"); setTimeout(()=>g.classList.remove("shakeAI"), 1700); }
-  try{ navigator.vibrate && navigator.vibrate([0,800,80,60,80,60,300]); }catch(e){}
-  const close = ()=>{ el.classList.add("out"); setTimeout(()=>el.remove(), 500); };
-  el.querySelector(".vbtn").addEventListener("click", e=>{ e.stopPropagation(); close(); if (mode!=="guest"){ const b = $("#startBtn"); if (b && !b.hidden) b.click(); } });
-  setTimeout(()=>el.addEventListener("click", close), 3000);
+  Snd.hit(.1); [523,659,784].forEach((f,i)=>Snd.tone(f,.15+i*.1,.16,"square",.09)); Snd.tone(1047,.45,.9,"square",.09);
+  [523,659,784,1047].forEach(f=>Snd.tone(f,.45,1.1,"sawtooth",.04));
+  setTimeout(()=>{ if (el.isConnected) coins(el.querySelector(".vcoin"), 90); }, 450);
+  try{ navigator.vibrate && navigator.vibrate([0,400,80,60,200]); }catch(e){}
+  setTimeout(()=>el.classList.add("out"), 2300); setTimeout(()=>el.remove(), 2800);
+  el.addEventListener("click", ()=>{ el.classList.add("out"); setTimeout(()=>el.remove(), 400); });
 }
 function confetti(n){
   const c=document.createElement("canvas"); c.id="confetti"; c.width=innerWidth*devicePixelRatio; c.height=innerHeight*devicePixelRatio; document.body.appendChild(c);
