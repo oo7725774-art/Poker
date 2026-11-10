@@ -1846,7 +1846,7 @@ async function quickMatch(){
   } finally { mmBusy=false; lbl.textContent=old; btn.disabled=false; }
 }
 
-const APP_VER = "v53";
+const APP_VER = "v54";
 async function connect(){
   const note = $("#netnote");
   { const vb = $("#verBadge"); if (vb) vb.textContent = APP_VER; }
@@ -2082,7 +2082,7 @@ function voidHand(){
 const JP_BASE = 5000, JP_ADD = 50, BONUS_RATE = .16;
 const JP_ON = false;   // ジャックポットは廃止（2026-11-08、ユーザー希望）。戻すときは true に
 const BONUS_KINDS = [
-  {k:"pot2",     t:"POT ×2",        jp:"勝った人のポットが2倍"},
+  {k:"pot2",     t:"POT ×1.5",      jp:"勝った人のポットが1.5倍"},
   {k:"blind3",   t:"BLIND ×3",      jp:"ブラインドが3倍の大勝負"},
   {k:"jpchance", t:"JACKPOT CHANCE", jp:"フルハウス以上でジャックポット"},
 ].filter(x => JP_ON || x.k!=="jpchance");
@@ -2258,7 +2258,7 @@ function dealStreet(){
 }
 function winUncontested(w){
   collectBets();
-  const amt = potTotal() * (st.bonus==="pot2" ? 2 : 1);
+  const amt = Math.round(potTotal() * (st.bonus==="pot2" ? 1.5 : 1));
   w.chips += amt;
   st.result = {hand: st.handNo, pots:[{amount:amt, winners:[w.id], hand:null}], bonus: st.bonus||null};
   logLine(w.name+" wins "+fmt(amt));
@@ -2281,7 +2281,7 @@ function showdown(){
     else pots.push({amount, winners: ws.map(s=>s.id), hand: ws[0].best.name, five: ws[0].best.five});
     prev=L;
   }
-  if (st.bonus==="pot2") pots.forEach(p=>{ p.amount *= 2; p.x2 = true; });
+  if (st.bonus==="pot2") pots.forEach(p=>{ p.amount = Math.round(p.amount*1.5/10)*10; p.x2 = true; }); // v54 ×2→×1.5
   pots.forEach(p=>{
     const ws = p.winners.map(seatOf); const share = Math.floor(p.amount/ws.length/10)*10; let rem = p.amount - share*ws.length;
     // 端数は親番の左から
