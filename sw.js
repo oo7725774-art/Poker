@@ -1,6 +1,6 @@
 // オフラインでも遊べるように全部を保存する。
 // ページ本体（index.html）はネットにつながっていれば毎回最新を取りに行き、つながらないときだけ保存版を使う。
-const CACHE = "poker-v55";
+const CACHE = "poker-v56";
 const FILES = ["./", "index.html", "manifest.webmanifest", "lib/three.min.js", "lib/GLTFLoader.js", "lib/SkeletonUtils.js", "lib/mqtt.min.js",
   "models/male.json", "models/female.json", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png"];
 self.addEventListener("install", e => {

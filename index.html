@@ -1201,7 +1201,7 @@ body.ingame .stratpanel .emobar{order:0;grid-column:auto}
 @media (max-width:560px){.topbar .blindhud{display:none}}
 @media (max-width:560px){.blindhud{padding:2px 6px;gap:3px}.blindhud b{font-size:10px}.blindhud small{font-size:9px}.blindhud i{display:none}body.ingame #handNo{font-size:11px}}
 /* v52 優勝演出 */
-.vicx{position:fixed;inset:0;z-index:70;display:grid;place-items:center;background:radial-gradient(ellipse at 50% 45%,rgba(60,36,0,.55),rgba(0,0,0,.88) 70%);animation:vIn .5s ease-out both;overflow:hidden}
+.vicx{position:fixed;inset:0;z-index:90;display:grid;place-items:center;background:radial-gradient(ellipse at 50% 45%,rgba(60,36,0,.55),rgba(0,0,0,.88) 70%);animation:vIn .5s ease-out both;overflow:hidden}
 .vicx.out{opacity:0;transition:opacity .5s}
 @keyframes vIn{from{opacity:0}to{opacity:1}}
 .vicx .vflash{position:absolute;inset:0;background:#fff8d8;animation:aiFlash .5s ease-out .1s both;pointer-events:none}
@@ -1862,7 +1862,7 @@ async function quickMatch(){
   } finally { mmBusy=false; lbl.textContent=old; btn.disabled=false; }
 }
 
-const APP_VER = "v55";
+const APP_VER = "v56";
 async function connect(){
   const note = $("#netnote");
   { const vb = $("#verBadge"); if (vb) vb.textContent = APP_VER; }
@@ -3798,7 +3798,12 @@ function checkVictory(){
   gLastHand = st.handNo; gPeak = Math.max(gPeak, st.seats.filter(x=>!x.leave).length);
   if (!st || !st.over || !st.over.id || st.over.id!==me.id) return;
   const key = (st.tid||st.code)+":"+st.handNo; if (vicSeen===key) return; vicSeen = key;
-  setTimeout(victoryFx, 900);
+  // v56 決着の局の BIG/MEGA WIN やバナーに隠れないよう、それが消えてから出す（最大4秒待つ）
+  const t0 = Date.now();
+  const go = () => { const busy = document.querySelector(".bwx:not(.out),.aix,.jpx");
+    if (busy && Date.now()-t0 < 4000) return setTimeout(go, 200);
+    document.querySelectorAll(".bwx,.banner").forEach(n=>n.remove()); bannerEl = null; victoryFx(); };
+  setTimeout(go, 600);
 }
 function victoryFx(){
   // v53 短く：VICTORYを派手に出して、約2.5秒で自動で消える
